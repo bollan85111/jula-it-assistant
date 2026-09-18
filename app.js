@@ -130,24 +130,41 @@
   // ---------- LLM（后台固定配置，员工不可修改）----------
   var FIXED_CFG = {
     base: "https://open.bigmodel.cn/api/paas/v4",
-    key: "7c947720ea864d3abd3fc43324e40a32.dlK66v8U3skJiZM2",
+    key: "7ee9d3f936204473bdd884f16652370d.ETFM6YrJY2YM45Si",
     model: "glm-4.7-flash"
   };
 
-  function callLLM(cfg, messages) {
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function callLLM(cfg, messages, tries) {
+    tries = tries || 1;
     var body = {
       model: cfg.model,
       messages: messages,
       temperature: 0.2
     };
+    var hdrs = { "Content-Type": "application/json" };
+    if (cfg.key) hdrs["Authorization"] = "Bearer " + cfg.key; // 直连时才带 Key；走代理时由代理注入
     return fetch(cfg.base + "/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.key },
+      headers: hdrs,
       body: JSON.stringify(body)
     }).then(function (r) {
-      if (!r.ok) throw new Error("LLM HTTP " + r.status);
-      return r.json();
+      if (r.ok) return r.json();
+      // 限流：HTTP 429（免费模型 RPM/QPS 过低），按 Retry-After 退避重试
+      if (r.status === 429 && tries < 4) {
+        var ra = parseInt(r.headers.get("Retry-After") || "2", 10);
+        if (!isFinite(ra) || ra < 1) ra = 2;
+        return sleep(ra * 1000).then(function () { return callLLM(cfg, messages, tries + 1); });
+      }
+      throw new Error("LLM HTTP " + r.status);
     }).then(function (d) {
+      // 智谱把错误放在 200 响应体里（如 1305 限流 / 1113 余额不足），需显式抛出
+      if (d && d.error) {
+        if (d.error.code === 1305 && tries < 4) {
+          return sleep(1500).then(function () { return callLLM(cfg, messages, tries + 1); });
+        }
+        throw new Error("LLM " + d.error.code + ": " + d.error.message);
+      }
       return (d.choices && d.choices[0] && d.choices[0].message.content) || "";
     });
   }
@@ -331,15 +348,16 @@
         addMsg("bot", renderText(la) + sourcesHtml(preciseArts) + contactFooter());
       }
       trimHistory();
-    }).catch(function () {
+    }).catch(function (err) {
       showTyping(false); sendBtn.disabled = false;
-      // API 失败：兜底用本地知识库作答，保证可用
+      // API 失败：兜底用本地知识库作答，保证可用；同时把真实错误暴露出来便于排查
       var la = buildLocalAnswer(arts, q) || fallback(q);
+      var why = (err && err.message) ? err.message : "网络/跨域被拒绝(Failed to fetch)";
+      var note = "\n\n（注：API 调用失败：" + why + "，已回退到本地知识库）";
       history.push({ role: "user", content: q });
-      history.push({ role: "assistant", content: la + "\n\n（注：API 调用失败，已回退到本地知识库）" });
+      history.push({ role: "assistant", content: la + note });
       trimHistory();
-      addMsg("bot", renderText(la +
-        "\n\n（注：API 调用失败，已回退到本地知识库）") + sourcesHtml(preciseArts) + contactFooter());
+      addMsg("bot", renderText(la + note) + sourcesHtml(preciseArts) + contactFooter());
     });
   }
 
