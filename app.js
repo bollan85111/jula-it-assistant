@@ -123,13 +123,12 @@
       '\nIT知识库：<a href="' + escapeHtml(sol) + '" target="_blank" rel="noopener">' + escapeHtml(sol) + "</a>";
   }
 
-  // ---------- LLM (optional) ----------
-  function getCfg() {
-    try { return JSON.parse(localStorage.getItem("jula_llm") || "null"); }
-    catch (e) { return null; }
-  }
-  function setCfg(cfg) { localStorage.setItem("jula_llm", JSON.stringify(cfg)); }
-  function clearCfg() { localStorage.removeItem("jula_llm"); }
+  // ---------- LLM（后台固定配置，员工不可修改）----------
+  var FIXED_CFG = {
+    base: "https://open.bigmodel.cn/api/paas/v4",
+    key: "7c947720ea864d3abd3fc43324e40a32.dlK66v8U3skJiZM2",
+    model: "glm-4-flash"
+  };
 
   function callLLM(cfg, q, context) {
     var sys = "你是 Jula 公司的 IT 支持 AI 助理，语气友好、简洁、专业，使用简体中文。" +
@@ -310,7 +309,7 @@
     var precise = scored.filter(function (x) { return x.s >= maxS * 0.6; });
     if (!precise.length) precise = scored.slice(0, 1);
     var preciseArts = precise.map(function (x) { return x.a; });
-    var cfg = getCfg();
+    var cfg = FIXED_CFG; // 后台固定模型，员工不可改
 
     // 检索优先级：① 本地知识库（Jira/Confluence 同步 + 上传的源文件）模糊匹配
     //           ② 仅当本地命中"确实相关"时才本地作答，否则回退 API 模型。
@@ -376,31 +375,4 @@
     input.style.height = Math.min(input.scrollHeight, 120) + "px";
   });
 
-  // ---------- settings ----------
-  var modal = document.getElementById("settingsModal");
-  var cfgBase = document.getElementById("cfgBase");
-  var cfgKey = document.getElementById("cfgKey");
-  var cfgModel = document.getElementById("cfgModel");
-  var cfgStatus = document.getElementById("cfgStatus");
-
-  document.getElementById("settingsBtn").onclick = function () {
-    var c = getCfg() || {};
-    cfgBase.value = c.base || "https://api.openai.com/v1";
-    cfgKey.value = c.key || "";
-    cfgModel.value = c.model || "gpt-4o-mini";
-    cfgStatus.textContent = "";
-    modal.hidden = false;
-  };
-  document.getElementById("closeSettings").onclick = function () { modal.hidden = true; };
-  document.getElementById("cfgSave").onclick = function () {
-    setCfg({ base: cfgBase.value.trim(), key: cfgKey.value.trim(), model: cfgModel.value.trim() });
-    cfgStatus.textContent = "已保存 ✅ 现在将使用 LLM 生成回答。";
-    setTimeout(function () { modal.hidden = true; }, 800);
-  };
-  document.getElementById("cfgClear").onclick = function () {
-    clearCfg();
-    cfgStatus.textContent = "已清除，恢复为本地知识库检索模式。";
-    setTimeout(function () { modal.hidden = true; }, 800);
-  };
-  modal.addEventListener("click", function (e) { if (e.target === modal) modal.hidden = true; });
 })();

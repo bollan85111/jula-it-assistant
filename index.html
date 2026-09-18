@@ -17,7 +17,7 @@
           <div class="brand-sub" id="brandSub">在线 · 基于 OneDrive / Outlook / MFA / 网络 等知识库</div>
         </div>
       </div>
-      <button class="icon-btn" id="settingsBtn" title="LLM 设置">⚙</button>
+
     </header>
 
     <main class="chat" id="chat">
@@ -37,25 +37,6 @@
       <textarea id="input" rows="1" placeholder="描述你的问题，例如：OneDrive 同步失败显示红叉怎么办？"></textarea>
       <button id="send" class="send-btn">发送</button>
     </footer>
-  </div>
-
-  <!-- Settings modal -->
-  <div class="modal" id="settingsModal" hidden>
-    <div class="modal-card">
-      <div class="modal-head">
-        <h3>AI 模型设置（可选）</h3>
-        <button class="icon-btn" id="closeSettings">✕</button>
-      </div>
-      <p class="hint">默认使用本地知识库检索直接作答（无需联网/密钥）。如需更自然的对话式回答，可接入任意 OpenAI 兼容接口（如 Azure OpenAI）。密钥仅保存在本浏览器 localStorage，不会上传。</p>
-      <label>API Base URL<input id="cfgBase" placeholder="https://api.openai.com/v1" /></label>
-      <label>API Key<input id="cfgKey" type="password" placeholder="sk-..." /></label>
-      <label>Model 名称<input id="cfgModel" placeholder="gpt-4o-mini" /></label>
-      <div class="modal-actions">
-        <button id="cfgSave" class="primary">保存</button>
-        <button id="cfgClear">清除（使用本地检索）</button>
-      </div>
-      <p class="status" id="cfgStatus"></p>
-    </div>
   </div>
 
   <script src="kb.js"></script>
