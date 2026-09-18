@@ -309,47 +309,25 @@
     var precise = scored.filter(function (x) { return x.s >= maxS * 0.6; });
     if (!precise.length) precise = scored.slice(0, 1);
     var preciseArts = precise.map(function (x) { return x.a; });
-    var cfg = FIXED_CFG; // 后台固定模型，员工不可改
+    // 强制走后台固定的 GLM：以本地 KB 检索结果作为上下文，统一由模型生成回答；
+    // 同时保留参考文档（打开/下载源文档）与联系 IT 页脚。
+    var ctx = arts.map(function (a) { return "《" + a.title + "》\n" + a.answer; }).join("\n\n");
 
-    // 检索优先级：① 本地知识库（Jira/Confluence 同步 + 上传的源文件）模糊匹配
-    //           ② 仅当本地命中"确实相关"时才本地作答，否则回退 API 模型。
-    // 相关判定：整体分数够高(>=CONF_SCORE) 或 命中文章关键词(英文词 / >=3 个中文关键词字)，
-    // 过滤"电脑黑屏"这类仅因共享个别汉字而被弱匹配误答的无关问题。
-    var CONF_SCORE = 9;
-    var confident = !!(best && (maxS >= CONF_SCORE || isTopical(q, best.a)));
-    var localAnswer = confident ? buildLocalAnswer(arts, q) : null;
-
-    if (localAnswer) {
-      setTimeout(function () {
-        showTyping(false); sendBtn.disabled = false;
-        addMsg("bot", renderText(localAnswer) + sourcesHtml(preciseArts) + contactFooter());
-      }, 250);
-      return;
-    }
-
-    // 本地无答案 → 回退到 API 模型（若已配置）
-    if (cfg && cfg.base && cfg.key && cfg.model) {
-      var ctx = arts.map(function (a) { return "《" + a.title + "》\n" + a.answer; }).join("\n\n");
-      callLLM(cfg, q, ctx).then(function (ans) {
-        showTyping(false); sendBtn.disabled = false;
-        if (ans && ans.trim()) {
-          // 回退到 API 时不再附带本地弱匹配文档链接（避免误导）；
-          // renderText 会把答案中真实存在的网址自动转成可点击链接。
-          addMsg("bot", renderText(ans) + contactFooter());
-        } else {
-          addMsg("bot", renderText(fallback(q)) + contactFooter());
-        }
-      }).catch(function () {
-        showTyping(false); sendBtn.disabled = false;
-        addMsg("bot", renderText(fallback(q) +
-          "\n\n（注：API 调用失败，请检查模型设置或联系 IT）") + contactFooter());
-      });
-    } else {
-      setTimeout(function () {
-        showTyping(false); sendBtn.disabled = false;
-        addMsg("bot", renderText(fallback(q)) + contactFooter());
-      }, 250);
-    }
+    callLLM(FIXED_CFG, q, ctx).then(function (ans) {
+      showTyping(false); sendBtn.disabled = false;
+      if (ans && ans.trim()) {
+        addMsg("bot", renderText(ans) + sourcesHtml(preciseArts) + contactFooter());
+      } else {
+        // 模型返回空：回退到本地答案，仍保留文档链接
+        addMsg("bot", renderText(buildLocalAnswer(arts, q) || fallback(q)) +
+          sourcesHtml(preciseArts) + contactFooter());
+      }
+    }).catch(function () {
+      showTyping(false); sendBtn.disabled = false;
+      // API 失败：兜底用本地知识库作答，保证可用
+      addMsg("bot", renderText((buildLocalAnswer(arts, q) || fallback(q)) +
+        "\n\n（注：API 调用失败，已回退到本地知识库）") + sourcesHtml(preciseArts) + contactFooter());
+    });
   }
 
   function fallback(q) {
