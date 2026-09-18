@@ -131,7 +131,7 @@
   var FIXED_CFG = {
     base: "https://open.bigmodel.cn/api/paas/v4",
     key: "7ee9d3f936204473bdd884f16652370d.ETFM6YrJY2YM45Si",
-    model: "glm-4.7-flash"
+    model: "glm-4-flash"
   };
 
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
@@ -140,7 +140,8 @@
     var body = {
       model: cfg.model,
       messages: messages,
-      temperature: 0.2
+      temperature: 0.2,
+      max_tokens: 800 // 限制生成长度，降低免费档排队/生成耗时
     };
     var hdrs = { "Content-Type": "application/json" };
     if (cfg.key) hdrs["Authorization"] = "Bearer " + cfg.key; // 直连时才带 Key；走代理时由代理注入
