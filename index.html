@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jula IT 知识库 AI 助理</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='90'%3E%F0%9F%A4%96%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="avatar">🤖</div>
+        <div class="brand-text">
+          <div class="brand-name">Jula IT 知识库 AI 助理</div>
+          <div class="brand-sub" id="brandSub">在线 · 基于 OneDrive / Outlook / MFA / 网络 等知识库</div>
+        </div>
+      </div>
+      <button class="icon-btn" id="settingsBtn" title="LLM 设置">⚙</button>
+    </header>
+
+    <main class="chat" id="chat">
+      <div class="msg bot">
+        <div class="bubble">
+          你好，我是 <b>Jula IT 知识库 AI 助理</b> 👋<br/>
+          我可以解答 OneDrive / SharePoint 同步、Outlook 邮件·日历·备份与故障排查、MFA 注册、WiFi·VPN·NAS·打印机、Jira 工单与 IT 政策等问题。<br/>
+          试试点击下方问题，或直接输入你遇到的情况：
+          <div class="chips" id="chips"></div>
+        </div>
+      </div>
+    </main>
+
+    <div class="typing" id="typing" hidden><span></span><span></span><span></span></div>
+
+    <footer class="composer">
+      <textarea id="input" rows="1" placeholder="描述你的问题，例如：OneDrive 同步失败显示红叉怎么办？"></textarea>
+      <button id="send" class="send-btn">发送</button>
+    </footer>
+  </div>
+
+  <!-- Settings modal -->
+  <div class="modal" id="settingsModal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3>AI 模型设置（可选）</h3>
+        <button class="icon-btn" id="closeSettings">✕</button>
+      </div>
+      <p class="hint">默认使用本地知识库检索直接作答（无需联网/密钥）。如需更自然的对话式回答，可接入任意 OpenAI 兼容接口（如 Azure OpenAI）。密钥仅保存在本浏览器 localStorage，不会上传。</p>
+      <label>API Base URL<input id="cfgBase" placeholder="https://api.openai.com/v1" /></label>
+      <label>API Key<input id="cfgKey" type="password" placeholder="sk-..." /></label>
+      <label>Model 名称<input id="cfgModel" placeholder="gpt-4o-mini" /></label>
+      <div class="modal-actions">
+        <button id="cfgSave" class="primary">保存</button>
+        <button id="cfgClear">清除（使用本地检索）</button>
+      </div>
+      <p class="status" id="cfgStatus"></p>
+    </div>
+  </div>
+
+  <script src="kb.js"></script>
+  <script src="kb_confluence.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
