@@ -131,7 +131,7 @@
   var FIXED_CFG = {
     base: "https://open.bigmodel.cn/api/paas/v4",
     key: "7c947720ea864d3abd3fc43324e40a32.dlK66v8U3skJiZM2",
-    model: "glm-4-flashx"
+    model: "glm-4.7-flash"
   };
 
   function callLLM(cfg, messages) {
