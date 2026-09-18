@@ -29,6 +29,10 @@
   var typing = document.getElementById("typing");
   var chips = document.getElementById("chips");
 
+  // 多轮对话历史（仅本页会话，刷新即清空），用于让模型结合上下文理解追问
+  var history = [];
+  function trimHistory() { if (history.length > 12) history = history.slice(history.length - 12); }
+
   // ---------- helpers ----------
   function norm(s) {
     return (s || "").toLowerCase().replace(/\s+/g, "");
@@ -127,21 +131,13 @@
   var FIXED_CFG = {
     base: "https://open.bigmodel.cn/api/paas/v4",
     key: "7c947720ea864d3abd3fc43324e40a32.dlK66v8U3skJiZM2",
-    model: "glm-4-flash"
+    model: "glm-4-flashx"
   };
 
-  function callLLM(cfg, q, context) {
-    var sys = "你是 Jula 公司的 IT 支持 AI 助理，语气友好、简洁、专业，使用简体中文。" +
-      "优先依据下方【知识库】内容回答；若知识库不足以回答，可基于通用知识作答，不要编造。" +
-      "用清晰的步骤（1) 2) 3)）组织答案。重要：不要编造或猜测任何 URL/链接；" +
-      "知识库上下文中未明确给出的链接请勿自行添加，参考来源链接由系统在答案下方统一展示。若仍无法解决，引导用户提交 Jira 工单或联系 IT。" +
-      "\n\n【知识库】\n" + context;
+  function callLLM(cfg, messages) {
     var body = {
       model: cfg.model,
-      messages: [
-        { role: "system", content: sys },
-        { role: "user", content: q }
-      ],
+      messages: messages,
       temperature: 0.2
     };
     return fetch(cfg.base + "/chat/completions", {
@@ -309,23 +305,40 @@
     var precise = scored.filter(function (x) { return x.s >= maxS * 0.6; });
     if (!precise.length) precise = scored.slice(0, 1);
     var preciseArts = precise.map(function (x) { return x.a; });
-    // 强制走后台固定的 GLM：以本地 KB 检索结果作为上下文，统一由模型生成回答；
+    // 强制走后台固定的 GLM：以本地 KB 检索结果 + 历史对话作为上下文，统一由模型生成回答；
     // 同时保留参考文档（打开/下载源文档）与联系 IT 页脚。
     var ctx = arts.map(function (a) { return "《" + a.title + "》\n" + a.answer; }).join("\n\n");
+    var sys = "你是 Jula 公司的 IT 支持 AI 助理，语气友好、简洁、专业，使用简体中文。" +
+      "优先依据下方【知识库】内容回答；若知识库不足以回答，可基于通用知识作答，不要编造。" +
+      "用清晰的步骤（1) 2) 3)）组织答案。重要：不要编造或猜测任何 URL/链接；" +
+      "知识库上下文中未明确给出的链接请勿自行添加，参考来源链接由系统在答案下方统一展示。" +
+      "若仍无法解决，引导用户提交 Jira 工单或联系 IT。" +
+      "请结合【对话历史】理解用户的追问（如“那怎么操作”“具体步骤”“上一步的链接”等指代），保持语境连贯。" +
+      "\n\n【知识库】\n" + ctx;
+    var messages = [{ role: "system", content: sys }]
+      .concat(history, [{ role: "user", content: q }]);
 
-    callLLM(FIXED_CFG, q, ctx).then(function (ans) {
+    callLLM(FIXED_CFG, messages).then(function (ans) {
       showTyping(false); sendBtn.disabled = false;
+      history.push({ role: "user", content: q });
       if (ans && ans.trim()) {
+        history.push({ role: "assistant", content: ans });
         addMsg("bot", renderText(ans) + sourcesHtml(preciseArts) + contactFooter());
       } else {
         // 模型返回空：回退到本地答案，仍保留文档链接
-        addMsg("bot", renderText(buildLocalAnswer(arts, q) || fallback(q)) +
-          sourcesHtml(preciseArts) + contactFooter());
+        var la = buildLocalAnswer(arts, q) || fallback(q);
+        history.push({ role: "assistant", content: la });
+        addMsg("bot", renderText(la) + sourcesHtml(preciseArts) + contactFooter());
       }
+      trimHistory();
     }).catch(function () {
       showTyping(false); sendBtn.disabled = false;
       // API 失败：兜底用本地知识库作答，保证可用
-      addMsg("bot", renderText((buildLocalAnswer(arts, q) || fallback(q)) +
+      var la = buildLocalAnswer(arts, q) || fallback(q);
+      history.push({ role: "user", content: q });
+      history.push({ role: "assistant", content: la + "\n\n（注：API 调用失败，已回退到本地知识库）" });
+      trimHistory();
+      addMsg("bot", renderText(la +
         "\n\n（注：API 调用失败，已回退到本地知识库）") + sourcesHtml(preciseArts) + contactFooter());
     });
   }
