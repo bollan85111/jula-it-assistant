@@ -135,7 +135,7 @@
   var FIXED_CFG = {
     base: "https://open.bigmodel.cn/api/paas/v4",
     key: "7ee9d3f936204473bdd884f16652370d.ETFM6YrJY2YM45Si",
-    model: "glm-4-flash"
+    model: "glm-4.7-flash"
   };
 
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
