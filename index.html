@@ -33,8 +33,12 @@
 
     <div class="typing" id="typing" hidden><span></span><span></span><span></span></div>
 
+    <div class="attach-previews" id="previews" hidden></div>
+
     <footer class="composer">
-      <textarea id="input" rows="1" placeholder="描述你的问题，例如：OneDrive 同步失败显示红叉怎么办？"></textarea>
+      <button id="attach" class="attach-btn" type="button" title="添加图片或 .txt 文件">📎</button>
+      <input id="file" type="file" accept="image/*,text/plain,.txt" multiple hidden />
+      <textarea id="input" rows="1" placeholder="描述你的问题，或粘贴报错截图…"></textarea>
       <button id="send" class="send-btn">发送</button>
     </footer>
   </div>

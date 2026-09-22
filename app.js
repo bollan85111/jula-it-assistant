@@ -28,6 +28,10 @@
   var sendBtn = document.getElementById("send");
   var typing = document.getElementById("typing");
   var chips = document.getElementById("chips");
+  var attachBtn = document.getElementById("attach");
+  var fileInput = document.getElementById("file");
+  var previews = document.getElementById("previews");
+  var attachments = []; // {type:'image', name, dataUrl} | {type:'text', name, text}
 
   // 多轮对话历史（仅本页会话，刷新即清空），用于让模型结合上下文理解追问
   var history = [];
@@ -307,14 +311,47 @@
 
   function send() {
     var q = input.value.trim();
-    if (!q) return;
-    addMsg("user", escapeHtml(q));
+    if (!q && attachments.length === 0) return;
+
+    // 拼出用于检索/历史记录的纯文本（图片无法检索，仅并入文本附件内容）
+    var textFiles = attachments.filter(function (a) { return a.type === "text"; });
+    var userText = q;
+    if (textFiles.length) {
+      var blk = textFiles.map(function (a) {
+        return "\n\n【附件文本：" + a.name + "】\n" + a.text;
+      }).join("");
+      userText = (q ? q : "（请结合以下附件内容回答）") + blk;
+    }
+    var searchText = q || userText;
+
+    // 构建发给模型的内容（多模态：文本 + 图片）
+    var content;
+    if (attachments.length === 0) {
+      content = q;
+    } else {
+      content = [{ type: "text", text: userText }];
+      attachments.forEach(function (a) {
+        if (a.type === "image") content.push({ type: "image_url", image_url: { url: a.dataUrl } });
+      });
+    }
+
+    // 用户气泡：文本 + 图片缩略图
+    var imgs = attachments.filter(function (a) { return a.type === "image"; });
+    var userHtml = escapeHtml(q || "（已发送附件，请查看图片）");
+    if (imgs.length) {
+      userHtml += '<div class="att-mini">' + imgs.map(function (a) {
+        return '<img src="' + a.dataUrl + '" alt="附件图片" />';
+      }).join("") + "</div>";
+    }
+    addMsg("user", userHtml);
     input.value = "";
     input.style.height = "auto";
+    attachments = [];
+    renderAttachmentPreview();
     showTyping(true);
     sendBtn.disabled = true;
 
-    var scored = retrieve(q, 3);
+    var scored = retrieve(searchText, 3);
     var arts = scored.map(function (x) { return x.a; });
     // 参考文档需"精确定位"：只展示分数 >= 最高分 60% 的文章（至少保底 1 篇），
     // 其余模糊召回的仅用于组答案，不列为参考文档。
@@ -334,17 +371,17 @@
       "请结合【对话历史】理解用户的追问（如“那怎么操作”“具体步骤”“上一步的链接”等指代），保持语境连贯。" +
       "\n\n【知识库】\n" + ctx;
     var messages = [{ role: "system", content: sys }]
-      .concat(history, [{ role: "user", content: q }]);
+      .concat(history, [{ role: "user", content: content }]);
 
     callLLM(FIXED_CFG, messages).then(function (ans) {
       showTyping(false); sendBtn.disabled = false;
-      history.push({ role: "user", content: q });
+      history.push({ role: "user", content: userText });
       if (ans && ans.trim()) {
         history.push({ role: "assistant", content: ans });
         addMsg("bot", renderText(ans) + sourcesHtml(preciseArts) + contactFooter());
       } else {
         // 模型返回空：回退到本地答案，仍保留文档链接
-        var la = buildLocalAnswer(arts, q) || fallback(q);
+        var la = buildLocalAnswer(arts, searchText) || fallback(searchText);
         history.push({ role: "assistant", content: la });
         addMsg("bot", renderText(la) + sourcesHtml(preciseArts) + contactFooter());
       }
@@ -352,10 +389,10 @@
     }).catch(function (err) {
       showTyping(false); sendBtn.disabled = false;
       // API 失败：兜底用本地知识库作答，保证可用；同时把真实错误暴露出来便于排查
-      var la = buildLocalAnswer(arts, q) || fallback(q);
+      var la = buildLocalAnswer(arts, searchText) || fallback(searchText);
       var why = (err && err.message) ? err.message : "网络/跨域被拒绝(Failed to fetch)";
       var note = "\n\n（注：API 调用失败：" + why + "，已回退到本地知识库）";
-      history.push({ role: "user", content: q });
+      history.push({ role: "user", content: userText });
       history.push({ role: "assistant", content: la + note });
       trimHistory();
       addMsg("bot", renderText(la + note) + sourcesHtml(preciseArts) + contactFooter());
@@ -366,6 +403,58 @@
     return "抱歉，我在当前知识库中没有找到与「" + q + "」直接匹配的内容。\n" +
       "你可以换一种说法，或联系 IT 支持获取帮助。";
   }
+
+  // ---------- 附件（图片 / .txt） ----------
+  function renderAttachmentPreview() {
+    previews.innerHTML = "";
+    attachments.forEach(function (a, i) {
+      var chip = document.createElement("div");
+      chip.className = "att-chip";
+      if (a.type === "image") {
+        var img = document.createElement("img");
+        img.src = a.dataUrl; img.className = "att-thumb";
+        chip.appendChild(img);
+      } else {
+        var ic = document.createElement("span");
+        ic.className = "att-file"; ic.textContent = "📄";
+        chip.appendChild(ic);
+      }
+      var name = document.createElement("span");
+      name.className = "att-name"; name.textContent = a.name;
+      chip.appendChild(name);
+      var x = document.createElement("button");
+      x.className = "att-x"; x.type = "button"; x.textContent = "×"; x.title = "移除";
+      x.onclick = function () { attachments.splice(i, 1); renderAttachmentPreview(); };
+      chip.appendChild(x);
+      previews.appendChild(chip);
+    });
+    previews.hidden = attachments.length === 0;
+  }
+
+  function addFiles(fileList) {
+    Array.prototype.forEach.call(fileList, function (f) {
+      if (f.type.indexOf("image/") === 0) {
+        var rd = new FileReader();
+        rd.onload = function () {
+          attachments.push({ type: "image", name: f.name, dataUrl: rd.result });
+          renderAttachmentPreview();
+        };
+        rd.readAsDataURL(f);
+      } else if (f.type === "text/plain" || /\.txt$/i.test(f.name)) {
+        var rt = new FileReader();
+        rt.onload = function () {
+          attachments.push({ type: "text", name: f.name, text: rt.result });
+          renderAttachmentPreview();
+        };
+        rt.readAsText(f);
+      } else {
+        alert("暂不支持的文件类型：" + f.name + "\n目前仅支持图片和 .txt 文本文件。");
+      }
+    });
+  }
+
+  attachBtn.onclick = function () { fileInput.click(); };
+  fileInput.onchange = function () { addFiles(fileInput.files); fileInput.value = ""; };
 
   // ---------- init ----------
   SUGGESTIONS.slice(0, 6).forEach(function (s) {
