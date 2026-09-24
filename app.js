@@ -41,17 +41,10 @@
   function norm(s) {
     return (s || "").toLowerCase().replace(/\s+/g, "");
   }
-  function isCJK(ch) {
-    return /[一-龥]/.test(ch);
-  }
   function bigrams(s) {
-    // 仅取中文相邻字成词，避免英文片段/单字噪声导致误命中
     s = norm(s);
     var set = {};
-    for (var i = 0; i < s.length - 1; i++) {
-      var a = s.charAt(i), b = s.charAt(i + 1);
-      if (isCJK(a) && isCJK(b)) set[a + b] = 1;
-    }
+    for (var i = 0; i < s.length - 1; i++) set[s.substr(i, 2)] = 1;
     return set;
   }
   function overlap(a, b) {
@@ -60,65 +53,7 @@
     return n;
   }
 
-  // ---------- 停用词 / 同义词扩展 ----------
-  // 停用词：对检索无意义的高频虚词 / 口语词，去掉以减少噪声（含“如何/怎样”等通用提问词，
-  // 因为它们大量出现在文章标题里，反而会制造假的主题相关性）。
-  var STOPWORDS = ("的 了 吗 呢 怎么 如何 怎样 什么 为什么 怎么办 可以 能 想 我们 你们 请问 问 一个 一些 这个 那个 有 没 是 在 和 与 及 或 请 帮忙 帮助 解决 问题 吧 啊 哦 呀 哈 处理 一下 需要 应该 咋 该 是否 怎么弄 不知 不知道 我想 我要 帮我 咨询 我这边 我们这边")
-    .split(" ");
-  // 同义词 -> 规范词。value 必须是知识库中【真实存在的关键词】（或英文 token），
-  // 才能参与词面命中；用短语同义词会吞掉有区分度的中文，故尽量用语词级。
-  var SYNONYMS = {
-    "云盘": "onedrive", "网盘": "onedrive", "蓝云": "onedrive", "蓝色云朵": "onedrive", "个人云": "onedrive",
-    "验证器": "authenticator", "身份验证器": "authenticator", "微软验证器": "authenticator", "microsoft authenticator": "authenticator",
-    "双因素": "mfa", "两步验证": "mfa", "二次验证": "mfa", "多因素": "mfa",
-    "远程桌面": "rdp", "远程": "rdp", "在家办公": "rdp", "远程控制": "rdp",
-    "虚拟专网": "vpn", "连外网": "vpn", "外网": "vpn",
-    "硬盘加密": "bitlocker", "恢复密钥": "bitlocker", "恢复秘钥": "bitlocker", "启动锁": "bitlocker",
-    "报修": "jira", "工单": "jira", "it支持": "jira", "支持热线": "jira", "热线": "jira", "servicedesk": "jira",
-    "会议室预订": "meeting", "订会议室": "meeting", "预订会议室": "meeting", "视频会议": "teams",
-    "发邮件": "发不出", "收邮件": "收不到", "邮件发不出": "发不出", "发不出去": "发不出", "卡发件箱": "发不出",
-    "收不到邮件": "收不到", "没收到邮件": "收不到",
-    "组邮箱": "共享邮箱", "共享邮箱": "共享邮箱", "团队邮箱": "共享邮箱", "公共邮箱": "共享邮箱",
-    "忘记密码": "重置密码", "重置密码": "重置密码", "改密码": "重置密码", "修改密码": "重置密码", "密码过期": "重置密码",
-    "解锁账户": "解锁", "账户被锁": "解锁",
-    "诈骗邮件": "钓鱼", "钓鱼": "钓鱼", "可疑邮件": "钓鱼", "垃圾邮件": "垃圾邮件", "白名单": "垃圾邮件", "拦截": "垃圾邮件",
-    "打印机": "printer", "连打印机": "printer",
-    "网络盘": "nas", "共享盘": "nas", "映射盘": "nas", "映射网络驱动器": "nas", "网络驱动器": "nas",
-    "无线网": "wifi", "连wifi": "wifi", "连 wifi": "wifi", "无线": "wifi", "内网": "wifi", "上不了网": "wifi", "连不上网": "wifi", "公司wifi": "wifi",
-    "登不上": "登录", "登录不了": "登录", "开机登录": "登录", "域登录": "登录", "锁屏登录": "登录", "pin": "pin",
-    "c盘满": "卡顿", "磁盘满": "卡顿", "电脑卡": "卡顿", "电脑慢": "卡顿", "清理电脑": "卡顿",
-    "误删文件": "误删", "找回文件": "误删", "恢复文件": "误删", "回收站": "误删", "历史版本": "误删", "还原文件": "误删",
-    "邮件签名": "签名", "落款": "落款",
-    "新员工": "新员工", "入职": "入职", "报到": "报到", "领电脑": "领电脑", "第一天": "onboarding",
-    "装软件": "安装软件", "安装软件": "安装软件", "公司门户": "安装软件", "intune": "intune", "company portal": "intune",
-    "外接显示器": "显示器", "双屏": "显示器", "多屏": "显示器", "投影": "投影", "分辨率": "分辨率",
-    "手机收邮件": "手机", "outlook手机": "手机", "手机邮箱": "手机", "手机邮件": "手机", "配置手机": "手机",
-    "团队站点": "sharepoint", "协作平台": "sharepoint", "团队文档": "sharepoint",
-    "自动分类": "规则", "邮件规则": "规则", "分拣": "规则",
-    "pst备份": "pst", "备份邮件": "备份", "导出pst": "pst", "归档邮件": "归档", "还原pst": "还原",
-    "邮件乱码": "乱码", "乱码": "乱码", "编码": "编码",
-    "outlook搜索": "搜索", "搜索邮件": "搜索", "搜不到": "搜索", "重建索引": "重建索引",
-    "outlook闪退": "闪退", "outlook卡死": "无响应", "卡死": "无响应", "启动慢": "启动慢", "无响应": "无响应",
-    "反复密码": "凭据", "一直要密码": "凭据", "凭据": "凭据", "登录窗口": "登录窗口",
-    "owa": "owa", "诊断": "诊断", "排查": "排查", "本地还是服务器": "本地问题",
-    "it政策": "it政策", "合规": "合规", "红线": "合规", "盗版": "盗版", "it合规": "合规"
-  };
-  // 把用户问题规范化：同义词扩展（注入规范关键词）+ 去停用词，提升召回与准确性
-  function expandQuery(q) {
-    var s = norm(q);
-    var keys = Object.keys(SYNONYMS).sort(function (a, b) { return b.length - a.length; });
-    keys.forEach(function (k) {
-      var kn = norm(k);
-      if (s.indexOf(kn) >= 0) s = s.split(kn).join(" " + SYNONYMS[k] + " ");
-    });
-    STOPWORDS.forEach(function (w) {
-      var wn = norm(w);
-      if (!wn) return;
-      s = s.split(wn).join(" ");
-    });
-    return s.replace(/\s+/g, " ").trim();
-  }
-
+  // ---------- retrieval（模糊检索）----------
   // 把文本拆成 token：英文/数字词 + 中文单字，用于跨词/跨字的模糊匹配
   function tokenSet(s) {
     var low = (s || "").toLowerCase();
@@ -134,88 +69,45 @@
     for (var i = 0; i < k.length; i++) if (b[k[i]]) n++;
     return n;
   }
-  function overlapEnglish(a, b) {
-    var k = Object.keys(a), n = 0;
-    for (var i = 0; i < k.length; i++) if (k[i].indexOf("w:") === 0 && b[k[i]]) n++;
-    return n;
-  }
-  function articleKeyText(a) {
-    return [a.category, a.title, (a.keywords || []).join(" "), (a.questions || []).join(" ")].join(" ");
-  }
-  // 文章答案质量因子：过滤 Confluence 同步产生的占位/空壳答案（"true" / "About guide…" 等），
-  // 避免这些无效内容污染模型上下文与参考来源。
-  function articleQuality(a) {
-    var ans = (a.answer || "").replace(/\s+/g, "");
-    if (!ans) return 0.1;
-    if (ans.length < 25) return 0.15;
-    if (/^true\d*$/i.test(ans) || /^true0*true0*$/i.test(ans)) return 0.1;
-    if (/关于指南|aboutguide|tableofcontents/i.test((a.answer || "")) && ans.length < 130) return 0.45;
-    if (/^[^一-龥a-z0-9]*$/.test(ans)) return 0.3; // 几乎无中英文实质内容
-    return 1.0;
-  }
   function scoreArticle(q, art) {
-    if (!art.answer || !String(art.answer).trim()) return { s: 0, topical: false, quality: 0 };
-    var eq = expandQuery(q);
-    var keyText = articleKeyText(art);
-    var qTok = tokenSet(eq);
-    var aKeyTok = tokenSet(keyText);
-    var aBodyTok = tokenSet((art.answer || "").slice(0, 700));
-
-    var en = overlapEnglish(qTok, aKeyTok);             // 英文关键词命中（onedrive / vpn / mfa …）
-    var bgKey = overlap(bigrams(eq), bigrams(keyText)); // 中文相邻字成词命中（标题/关键词/问题）
-    var titleOv = overlapN(qTok, tokenSet(art.title));
-    var qOv = 0;
-    (art.questions || []).forEach(function (qq) {
-      qOv = Math.max(qOv, overlapN(qTok, tokenSet(qq)));
-    });
-    var bodyOv = overlapN(qTok, aBodyTok);              // 正文单字级重合（噪声，低权重）
-
-    // 主题相关性门控：必须命中英文关键词或中文词（bigram），否则视为不相关，大幅降权
-    var topical = (en > 0) || (bgKey >= 1);
-
-    var score = en * 2.2 + qOv * 2.6 + titleOv * 2.2 + bgKey * 1.3 + bodyOv * 0.25;
-    var quality = articleQuality(art);
-    score *= quality;
-    if (!topical) score *= 0.12;
-    return { s: score, topical: topical, quality: quality };
+    // 空答案的落地页（如仅含子页列表的 Confluence 父页）不作为回答，避免显示空白
+    if (!art.answer || !String(art.answer).trim()) return 0;
+    var field = [art.category, art.title, (art.keywords || []).join(" "),
+      (art.questions || []).join(" "), (art.answer || "").slice(0, 400)].join(" ");
+    var qTok = tokenSet(q);
+    var aTok = tokenSet(field);
+    var ov = overlapN(qTok, aTok);                     // 词/字级模糊重合
+    var bg = overlap(bigrams(q), bigrams(field));      // 字符级 bigram 模糊（容忍错别字/词序）
+    var titleOv = overlapN(qTok, tokenSet(art.title)); // 标题命中加权
+    return ov * 1.2 + bg * 0.5 + titleOv * 1.5;
   }
 
   function retrieve(q, topN) {
     var scored = KB.articles.map(function (a) {
-      var r = scoreArticle(q, a);
-      return { a: a, s: r.s, topical: r.topical, quality: r.quality };
-    }).filter(function (x) { return x.s > 0; });
+      return { a: a, s: scoreArticle(q, a) };
+    });
     scored.sort(function (x, y) { return y.s - x.s; });
-    return scored.slice(0, topN || 6);
+    var best = scored.filter(function (x) { return x.s > 0; });
+    if (best.length === 0) return [];
+    // 作答用的模糊召回：保留分数 >= 最高分 25% 的文章（容忍错别字/词序，问题检索可模糊）
+    var max = best[0].s;
+    var keep = best.filter(function (x) { return x.s >= Math.max(0.5, max * 0.25); });
+    return keep.slice(0, topN || 3);
   }
 
-  // ---------- 意图识别（问候 / 感谢 / 能力询问 本地即时回应）----------
-  function detectIntent(q) {
-    var t = norm(q);
-    if (!t) return null;
-    var greet = ["你好", "您好", "在吗", "在不在", "有人吗", "早上好", "下午好", "晚上好", "hi", "hello", "hallo", "hey"];
-    var thanks = ["谢谢", "感谢", "多谢", "thx", "thanks", "谢了", "麻烦了", "辛苦了"];
-    var cap = ["你能做什么", "你会什么", "你能干啥", "你能帮什么", "有什么用", "能问什么", "覆盖什么", "能解决什么", "你会干嘛", "你会做啥", "会什么"];
-    function has(arr) { return arr.some(function (w) { return t.indexOf(norm(w)) >= 0; }); }
-    if (has(greet)) return "greeting";
-    if (has(thanks)) return "thanks";
-    if (has(cap)) return "capability";
-    return null;
-  }
-  function intentReply(intent) {
-    if (intent === "greeting") {
-      return renderText("你好 👋 我是 Jula IT 知识库 AI 助理。\n我可以帮你解决 OneDrive / SharePoint 同步、Outlook 邮件·日历·备份与故障、MFA 注册、WiFi·VPN·NAS·打印机、Jira 工单与 IT 政策等问题。\n直接描述你遇到的问题，或点下面的示例就行～");
+  // 判断问题是否真的命中某篇文章的主题：要求与文章【关键词】有实质重叠，
+  // 要么含英文关键词（如 onedrive / vpn / mfa…），要么含 >=3 个中文关键词字，
+  // 以过滤"电脑黑屏"这类仅因共享个别汉字而误匹配的问题。
+  function isTopical(q, art) {
+    var qTok = tokenSet(q);
+    var kwTok = tokenSet((art.keywords || []).join(" "));
+    var latin = 0, cjk = 0;
+    for (var k in qTok) {
+      if (!kwTok[k]) continue;
+      if (k.indexOf("w:") === 0) latin++;
+      else if (k.indexOf("c:") === 0) cjk++;
     }
-    if (intent === "thanks") {
-      return renderText("不客气，随时找我 😊 如果还有其他 IT 问题尽管说；仍未解决可联系 IT：bollan.zhang@jula.com（分机 8800）或提交 Jira 工单。");
-    }
-    if (intent === "capability") {
-      var kv = byId["kb-nav"];
-      var ans = kv && kv.answer ? kv.answer
-        : "我可以解答 Jula IT 相关问题，包括 OneDrive、SharePoint、Outlook 邮件与日历、MFA、网络与打印、Jira 工单与 IT 政策等。";
-      return renderText(ans) + sourcesHtml(kv ? [kv] : []);
-    }
-    return null;
+    return latin > 0 || cjk >= 3;
   }
 
   function buildLocalAnswer(arts, q) {
@@ -253,7 +145,7 @@
       model: cfg.model,
       messages: messages,
       temperature: 0.2,
-      max_tokens: 1024 // 限制生成长度，降低免费档排队/生成耗时
+      max_tokens: 800 // 限制生成长度，降低免费档排队/生成耗时
     };
     var hdrs = { "Content-Type": "application/json" };
     if (cfg.key) hdrs["Authorization"] = "Bearer " + cfg.key; // 直连时才带 Key；走代理时由代理注入
@@ -432,22 +324,6 @@
     }
     var searchText = q || userText;
 
-    // 意图识别：问候 / 感谢 / 能力询问 走本地即时回应（零延迟、更可控，不必占用模型）
-    if (attachments.length === 0) {
-      var intent = detectIntent(q);
-      if (intent) {
-        var rep = intentReply(intent);
-        addMsg("user", escapeHtml(q));
-        addMsg("bot", rep);
-        input.value = "";
-        input.style.height = "auto";
-        history.push({ role: "user", content: userText });
-        history.push({ role: "assistant", content: intent });
-        trimHistory();
-        return;
-      }
-    }
-
     // 构建发给模型的内容（多模态：文本 + 图片）
     var content;
     if (attachments.length === 0) {
@@ -475,32 +351,25 @@
     showTyping(true);
     sendBtn.disabled = true;
 
-    var scored = retrieve(searchText, 6);
-    // 仅把“主题相关 + 答案可用”的文章送入模型上下文，避免噪声带偏回答
-    var ctxArticles = scored.filter(function (x) {
-      return x.topical && x.quality >= 0.3;
-    }).slice(0, 3);
+    var scored = retrieve(searchText, 3);
     var arts = scored.map(function (x) { return x.a; });
+    // 参考文档需"精确定位"：只展示分数 >= 最高分 60% 的文章（至少保底 1 篇），
+    // 其余模糊召回的仅用于组答案，不列为参考文档。
     var best = scored[0];
     var maxS = best ? best.s : 0;
-    // 参考文档：展示与问题真正相关的条目（至少保底 1 篇），无关的模糊召回不列为来源
-    var precise = ctxArticles.filter(function (x) { return x.s >= Math.max(0.5, maxS * 0.5); });
-    if (!precise.length) precise = ctxArticles.slice(0, 1);
+    var precise = scored.filter(function (x) { return x.s >= maxS * 0.6; });
+    if (!precise.length) precise = scored.slice(0, 1);
     var preciseArts = precise.map(function (x) { return x.a; });
-
-    var ctx = ctxArticles.map(function (x) {
-      return "《" + x.a.title + "》\n" + x.a.answer;
-    }).join("\n\n");
-
-    var sys = "你是 Jula 公司的 IT 支持 AI 助理，语气友好、简洁、专业，使用简体中文。\n" +
-      "【回答纪律】\n" +
-      "1) 只有当【知识库】中有能直接回答该问题的条目时，才基于它作答；严禁凭空编造具体步骤、命令或链接。\n" +
-      "2) 若【知识库】没有任何相关条目（即下方为空或明显无关），明确告知用户：“这超出了我当前知识库的范围”，并引导其联系 IT（邮箱 bollan.zhang@jula.com / 分机 8800）或提交 Jira 工单，不要硬凑答案。\n" +
-      "3) 用清晰的编号步骤（1) 2) 3)）组织答案；如存在多条可选方案，分点说明。\n" +
-      "4) 处理追问：结合【对话历史】理解“那怎么操作”“链接在哪”“具体步骤”等指代，保持语境连贯。\n" +
-      "5) 不要猜测或生成任何 URL；参考链接由系统在答案下方统一提供，你无需提供。\n" +
-      (ctx ? "\n【知识库】\n" + ctx
-           : "\n（本次未检索到明确相关的知识库条目，请严格按上述第 2 条纪律回应，不要编造。）");
+    // 强制走后台固定的 GLM：以本地 KB 检索结果 + 历史对话作为上下文，统一由模型生成回答；
+    // 同时保留参考文档（打开/下载源文档）与联系 IT 页脚。
+    var ctx = arts.map(function (a) { return "《" + a.title + "》\n" + a.answer; }).join("\n\n");
+    var sys = "你是 Jula 公司的 IT 支持 AI 助理，语气友好、简洁、专业，使用简体中文。" +
+      "优先依据下方【知识库】内容回答；若知识库不足以回答，可基于通用知识作答，不要编造。" +
+      "用清晰的步骤（1) 2) 3)）组织答案。重要：不要编造或猜测任何 URL/链接；" +
+      "知识库上下文中未明确给出的链接请勿自行添加，参考来源链接由系统在答案下方统一展示。" +
+      "若仍无法解决，引导用户提交 Jira 工单或联系 IT。" +
+      "请结合【对话历史】理解用户的追问（如“那怎么操作”“具体步骤”“上一步的链接”等指代），保持语境连贯。" +
+      "\n\n【知识库】\n" + ctx;
     var messages = [{ role: "system", content: sys }]
       .concat(history, [{ role: "user", content: content }]);
 
