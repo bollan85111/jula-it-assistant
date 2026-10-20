@@ -132,20 +132,34 @@
   }
 
   // ---------- LLM（后台固定配置，员工不可修改）----------
+  // 火山方舟（Volcengine Ark）OpenAI 兼容接口
   var FIXED_CFG = {
-    base: "https://open.bigmodel.cn/api/paas/v4",
-    key: "7ee9d3f936204473bdd884f16652370d.ETFM6YrJY2YM45Si",
-    model: "glm-4.7-flash"
+    base: "https://ark.cn-beijing.volces.com/api/v3",
+    key: "ark-85dc7d1a-fae3-4dff-954f-5dde2a408d74-3746e",
+    model: "doubao-seed-2-1-lite-260915",
+    // 模型候选链：按顺序探测，第一个可用即锁定
+    // 仅保留账号已开通并实测可用的模型（2026-10-20 验证 HTTP 200）
+    models: [
+      "doubao-seed-2-1-lite-260915",
+      "doubao-seed-2-0-lite-260428"
+    ]
   };
+  // 已探测成功的模型（避免每次提问都重新试错）
+  var FIXED_MODEL = null;
 
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-  function callLLM(cfg, messages, tries) {
-    tries = tries || 1;
+
+  // 发起一次请求（指定具体模型）
+  function doCall(cfg, model, messages, tries) {
     var body = {
-      model: cfg.model,
+      model: model,
       messages: messages,
       temperature: 0.2,
-      max_tokens: 800 // 限制生成长度，降低免费档排队/生成耗时
+      max_tokens: 1200,   // 留足余量，避免长回答被截断
+      // Doubao-Seed-2.x 默认开启深度思考，会大量占用 max_tokens
+      // （实测 800 配额里思考+正文几乎顶满，回答易被截断）。
+      // 知识库问答不需要长推理，关闭思考后 token 消耗从 ~790 降到 ~40，且回答更直接。
+      thinking: { type: "disabled" }
     };
     var hdrs = { "Content-Type": "application/json" };
     if (cfg.key) hdrs["Authorization"] = "Bearer " + cfg.key; // 直连时才带 Key；走代理时由代理注入
@@ -155,23 +169,49 @@
       body: JSON.stringify(body)
     }).then(function (r) {
       if (r.ok) return r.json();
-      // 限流：HTTP 429（免费模型 RPM/QPS 过低），按 Retry-After 退避重试
+      // 限流：HTTP 429（RPM/QPS 过低），按 Retry-After 退避重试
       if (r.status === 429 && tries < 4) {
         var ra = parseInt(r.headers.get("Retry-After") || "2", 10);
         if (!isFinite(ra) || ra < 1) ra = 2;
-        return sleep(ra * 1000).then(function () { return callLLM(cfg, messages, tries + 1); });
+        return sleep(ra * 1000).then(function () { return doCall(cfg, model, messages, tries + 1); });
       }
-      throw new Error("LLM HTTP " + r.status);
+      // 方舟把错误放在响应体里（404/400 均可能），需解析出来才能区分「模型未开通」等可降级情形
+      return r.json().catch(function () { return null; }).then(function (d) {
+        throw mkErr(d, r.status);
+      });
     }).then(function (d) {
-      // 智谱把错误放在 200 响应体里（如 1305 限流 / 1113 余额不足），需显式抛出
-      if (d && d.error) {
-        if (d.error.code === 1305 && tries < 4) {
-          return sleep(1500).then(function () { return callLLM(cfg, messages, tries + 1); });
-        }
-        throw new Error("LLM " + d.error.code + ": " + d.error.message);
-      }
+      // 部分网关把错误放在 200 响应体里，需显式抛出
+      if (d && d.error) throw mkErr(d, 200);
       return (d.choices && d.choices[0] && d.choices[0].message.content) || "";
     });
+  }
+
+  function mkErr(d, status) {
+    var e = d && d.error ? d.error : null;
+    var err = new Error("LLM " + (e ? (e.code || status) : ("HTTP " + status)) +
+      (e && e.message ? ": " + e.message : ""));
+    err.code = e ? String(e.code) : ("HTTP" + status);
+    return err;
+  }
+
+  // 模型候选链：当前模型不可用（未开通/不存在）时自动换下一个
+  function callLLM(cfg, messages) {
+    var chain = FIXED_MODEL ? [FIXED_MODEL] : (cfg.models || [cfg.model]);
+    var i = 0;
+    function attempt() {
+      return doCall(cfg, chain[i], messages, 1).then(function (ans) {
+        FIXED_MODEL = chain[i];
+        return ans;
+      }, function (err) {
+        var code = err && err.code;
+        var canSwitch = code === "ModelNotOpen" || code === "InvalidEndpointOrModel.NotFound" ||
+          code === "NotFound" || code === "ModelNotFound" || code === "ModelNotAvailable";
+        i++;
+        if (canSwitch && i < chain.length) return attempt();
+        throw err;
+      });
+    }
+    return attempt();
   }
 
   // ---------- chat UI ----------
@@ -391,7 +431,18 @@
       // API 失败：兜底用本地知识库作答，保证可用；同时把真实错误暴露出来便于排查
       var la = buildLocalAnswer(arts, searchText) || fallback(searchText);
       var why = (err && err.message) ? err.message : "网络/跨域被拒绝(Failed to fetch)";
-      var note = "\n\n（注：API 调用失败：" + why + "，已回退到本地知识库）";
+      // 把方舟常见的几类失败翻译成人能看懂的话，便于 IT 快速定位
+      var hint = "网络/跨域被拒绝(Failed to fetch)";
+      if (/Unauthorized|401|403|Authentication|AccessDenied/i.test(why)) {
+        hint = "API Key 无效或无权限(" + why + ")";
+      } else if (/ModelNotOpen|NotFound|NotAvailable|ModelNotFound/i.test(why)) {
+        hint = "当前 API Key 未开通该模型(" + why + ")";
+      } else if (/429|rate|quota|limit|insufficient/i.test(why)) {
+        hint = "调用超限或余额不足(" + why + ")";
+      } else if (why) {
+        hint = why;
+      }
+      var note = "\n\n（注：AI 接口调用失败——" + hint + "，已回退到本地知识库检索结果）";
       history.push({ role: "user", content: userText });
       history.push({ role: "assistant", content: la + note });
       trimHistory();
