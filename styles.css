@@ -86,6 +86,10 @@ body {
 .src-link:hover { background: var(--purple-soft); }
 
 .typing { display: flex; gap: 4px; padding: 0 18px 8px; }
+/* 修复：hidden 属性必须能盖过上面的 display:flex，
+   否则输入框上方会一直显示「正在输入」的三点动画（空闲时不该出现）。
+   与 .modal[hidden] / .attach-previews[hidden] 同理，仅在 showTyping(true) 时显示。 */
+.typing[hidden] { display: none; }
 .typing span {
   width: 7px; height: 7px; border-radius: 50%; background: var(--purple-soft);
   animation: blink 1.2s infinite both;
